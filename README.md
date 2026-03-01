@@ -1,2 +1,2 @@
 # ClinicalMeetingRecorder
-The goal of this project is to secure a clinical meeting recorder between a doctor and patient conversation into a properly documented clinical note. Our project captures audio for the encounter, makes a speech to text description, and generates a summary for the clinical note. 
+The goal of this project is to secure a clinical meeting recorder between a doctor and patient conversation into a properly documented clinical note. Our project captures audio for the encounter, makes a speech to text description, and generates a summary for the clinical note.
