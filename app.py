@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import joblib
 import re
+import os
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import MaxAbsScaler
@@ -12,9 +13,28 @@ st.set_page_config(page_title="Clinical Meeting Recorder", layout="wide")
 st.title("Clinical Meeting Recorder")
 st.markdown("*Transform doctor-patient conversations into structured clinical notes*")
 
-#train model on startup (load saved models later)
+MODEL_DIR = 'models'
+MODEL_PATH = os.path.join(MODEL_DIR, 'section_classifier.joblib')
+
+def extract_features(df):
+    features = pd.DataFrame()
+    features['word_count'] = df['dialogue'].str.split().str.len()
+    features['turn_count'] = df['dialogue'].str.count(r'Doctor:|Patient:|\[doctor\]|\[patient\]')
+    features['doctor_words'] = df['dialogue'].apply(
+        lambda x: len(' '.join(re.findall(r'(?:Doctor|doctor).*?(?=Patient|patient|$)', x, re.DOTALL)).split()))
+    features['patient_words'] = df['dialogue'].apply(
+        lambda x: len(' '.join(re.findall(r'(?:Patient|patient).*?(?=Doctor|doctor|$)', x, re.DOTALL)).split()))
+    features['avg_turn_length'] = features['word_count'] / features['turn_count'].clip(lower=1)
+    return features
+
 @st.cache_resource
 def load_model():
+    #load saved model if it exists
+    if os.path.exists(MODEL_PATH):
+        saved = joblib.load(MODEL_PATH)
+        return saved['model'], saved['tfidf'], saved['scaler']
+
+    #otherwise train from scratch and save
     train_df = pd.read_csv('data/raw/MTS-Dialog-TrainingSet.csv')
 
     section_mapping = {
@@ -33,17 +53,6 @@ def load_model():
     tfidf = TfidfVectorizer(max_features=500, stop_words='english', ngram_range=(1,2), min_df=2, max_df=0.95)
     X_tfidf = tfidf.fit_transform(train_df['dialogue'])
 
-    def extract_features(df):
-        features = pd.DataFrame()
-        features['word_count'] = df['dialogue'].str.split().str.len()
-        features['turn_count'] = df['dialogue'].str.count(r'Doctor:|Patient:|\[doctor\]|\[patient\]')
-        features['doctor_words'] = df['dialogue'].apply(
-            lambda x: len(' '.join(re.findall(r'(?:Doctor|doctor).*?(?=Patient|patient|$)', x, re.DOTALL)).split()))
-        features['patient_words'] = df['dialogue'].apply(
-            lambda x: len(' '.join(re.findall(r'(?:Patient|patient).*?(?=Doctor|doctor|$)', x, re.DOTALL)).split()))
-        features['avg_turn_length'] = features['word_count'] / features['turn_count'].clip(lower=1)
-        return features
-
     X_extra = extract_features(train_df)
     X_combined = hstack([X_tfidf, X_extra.values])
     scaler = MaxAbsScaler()
@@ -52,13 +61,17 @@ def load_model():
     model = LogisticRegression(C=0.1, solver='lbfgs', class_weight='balanced', random_state=42, max_iter=2000)
     model.fit(X_scaled, train_df['section_group'])
 
-    return model, tfidf, scaler, extract_features
+    #save for next time
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    joblib.dump({'model': model, 'tfidf': tfidf, 'scaler': scaler}, MODEL_PATH)
 
-model, tfidf, scaler, extract_features = load_model()
+    return model, tfidf, scaler
+
+model, tfidf, scaler = load_model()
 
 #user input
 st.markdown("---")
-input_mode = st.radio("Choose input method:", ["Paste Transcript", "Upload Audio)"], horizontal=True)
+input_mode = st.radio("Choose input method:", ["Paste Transcript", "Upload Audio"], horizontal=True)
 
 if input_mode == "Paste Transcript":
     transcript = st.text_area(
