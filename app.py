@@ -29,7 +29,11 @@ def load_models():
                         ('followup', 'models/followup_classifier.joblib'),
                         ('severity', 'models/severity_classifier.joblib')]:
         if os.path.exists(path):
-            models[name] = joblib.load(path)
+            m = joblib.load(path)
+            # compatibility patch for older pickled scalers
+            if not hasattr(m['scaler'], 'clip'):
+                m['scaler'].clip = False
+            models[name] = m
     return models
 
 models = load_models()
